@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📍 Employee Check-in</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: linear-gradient(135deg, #667eea, #764ba2); min-height: 100vh; display:flex; justify-content:center; align-items:center; }
+    .container { background:white; padding:2rem; border-radius:20px; box-shadow:0 20px 40px rgba(0,0,0,0.1); max-width:400px; width:90%; text-align:center; }
+    h1 { color:#4f46e5; margin-bottom:1rem; }
+    input { width:100%; padding:.75rem; margin:.5rem 0; border:2px solid #e5e7eb; border-radius:8px; }
+    .btn { background:#4f46e5; color:white; border:none; padding:.75rem 1.5rem; border-radius:12px; margin:.5rem; cursor:pointer; }
+    .btn-success { background:#10b981; }
+    .btn-danger { background:#ef4444; }
+    .alert { padding:1rem; border-radius:8px; margin:1rem 0; }
+    .alert-info { background:#dbeafe; color:#1e40af; }
+    .alert-success { background:#dcfce7; color:#166534; }
+    .alert-error { background:#fee2e2; color:#991b1b; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <!-- Login -->
+  <div id="loginPage">
+    <h1>🔐 เข้าสู่ระบบ</h1>
+    <form id="loginForm">
+      <label>รหัสพนักงาน</label>
+      <input type="text" id="employeeId" required>
+      <label>รหัสยืนยัน (วันเดือนปีเกิด)</label>
+      <input type="password" id="passcode" required>
+      <div id="loginError" class="alert alert-error" style="display:none;">กรุณาตรวจสอบข้อมูลให้ถูกต้อง</div>
+      <button type="submit" class="btn">เข้าสู่ระบบ</button>
+    </form>
+  </div>
+
+  <!-- Main App -->
+  <div id="mainApp" style="display:none;">
+    <div class="alert alert-info" id="locationStatus">กำลังขอสิทธิ์เข้าถึงตำแหน่ง...</div>
+    <div class="status-card">
+      <h3>สถานะ</h3>
+      <div id="currentStatus">❌ ยังไม่ได้เช็คอิน</div>
+    </div>
+    <button id="checkinBtn" class="btn btn-success" disabled>เช็คอิน</button>
+    <button id="checkoutBtn" class="btn btn-danger" disabled>เช็คเอาต์</button>
+    <button id="logoutBtn" class="btn">ออกจากระบบ</button>
+  </div>
+</div>
+
+<script>
+let currentUser = null;
+let currentPosition = null;
+let isCheckedIn = false;
+
+document.addEventListener('DOMContentLoaded', () => {
+  checkExistingLogin();
+  setupLoginForm();
+});
+
+function checkExistingLogin() {
+  const savedUser = localStorage.getItem('currentUser');
+  if (savedUser) {
+    currentUser = JSON.parse(savedUser);
+    showMainApp();
+  }
+}
+
+function setupLoginForm() {
+  document.getElementById('loginForm').addEventListener('submit', e => {
+    e.preventDefault();
+    handleLogin();
+  });
+  document.getElementById('logoutBtn').addEventListener('click', logout);
+  document.getElementById('checkinBtn').addEventListener('click', checkIn);
+  document.getElementById('checkoutBtn').addEventListener('click', checkOut);
+}
+
+function handleLogin() {
+  const employeeId = document.getElementById('employeeId').value.trim();
+  const passcode = document.getElementById('passcode').value.trim();
+  if (!employeeId || !passcode) {
+    showLoginError("กรุณากรอกข้อมูลให้ครบ");
+    return;
+  }
+  currentUser = { employeeId, passcode };
+  localStorage.setItem('currentUser', JSON.stringify(currentUser));
+  showMainApp();
+}
+
+function showLoginError(msg) {
+  const div = document.getElementById('loginError');
+  div.textContent = msg;
+  div.style.display = 'block';
+}
+
+function showMainApp() {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('mainApp').style.display = 'block';
+  checkLocationPermission();
+}
+
+function logout() {
+  localStorage.clear();
+  currentUser = null;
+  document.getElementById('mainApp').style.display = 'none';
+  document.getElementById('loginPage').style.display = 'block';
+}
+
+function checkLocationPermission() {
+  if (!navigator.geolocation) {
+    showAlert('error','อุปกรณ์ไม่รองรับ GPS');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(pos => {
+    currentPosition = pos;
+    showAlert('success','ได้รับสิทธิ์เข้าถึงตำแหน่งแล้ว ✅');
+    document.getElementById('checkinBtn').disabled = false;
+    document.getElementById('checkoutBtn').disabled = false;
+  }, err => {
+    showAlert('error','ไม่สามารถเข้าถึงตำแหน่งได้');
+  });
+}
+
+function checkIn() {
+  if (!currentPosition) {
+    showAlert('error','กรุณาอนุญาตตำแหน่งก่อน');
+    return;
+  }
+  const now = new Date();
+  const record = {
+    action: "checkin",
+    employeeId: currentUser.employeeId,
+    passcode: currentUser.passcode,
+    timestamp: now.toISOString(),
+    location: {
+      latitude: currentPosition.coords.latitude,
+      longitude: currentPosition.coords.longitude
+    }
+  };
+  sendToN8N(record);
+  isCheckedIn = true;
+  localStorage.setItem('checkedIn','true');
+  document.getElementById('currentStatus').innerHTML = `✅ เช็คอินแล้ว<br>${now.toLocaleString('th-TH')}`;
+}
+
+function checkOut() {
+  if (!isCheckedIn) {
+    showAlert('error','กรุณาเช็คอินก่อน');
+    return;
+  }
+  const now = new Date();
+  const record = {
+    action: "checkout",
+    employeeId: currentUser.employeeId,
+    passcode: currentUser.passcode,
+    timestamp: now.toISOString(),
+    location: {
+      latitude: currentPosition.coords.latitude,
+      longitude: currentPosition.coords.longitude
+    }
+  };
+  sendToN8N(record);
+  isCheckedIn = false;
+  localStorage.setItem('checkedIn','false');
+  document.getElementById('currentStatus').innerHTML = `❌ เช็คเอาต์แล้ว<br>${now.toLocaleString('th-TH')}`;
+}
+
+function showAlert(type,msg) {
+  const div = document.getElementById('locationStatus');
+  div.className = `alert alert-${type}`;
+  div.textContent = msg;
+}
+
+function sendToN8N(record) {
+  // Reshape to workflow format
+  const payload = {
+    employeeId: record.employeeId,
+    passcode: record.passcode,
+    check_type: record.action,
+    location: {
+      latitude: record.location.latitude,
+      longitude: record.location.longitude
+    }
+  };
+
+  // ✅ Your webhook path
+  const webhookUrl = "https://phurinutoe.app.n8n.cloud/webhook-test/955a2d77-64d6-4c9f-b652-2eef8007dc6f";
+
+  fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  })
+  .then(async res => {
+    try {
+      const data = await res.json();
+      console.log("Response from n8n:", data);
+      showAlert("success", data.message || "ส่งข้อมูลสำเร็จ");
+    } catch {
+      console.warn("Non-JSON response from n8n");
+    }
+  })
+  .catch(err => {
+    console.error("Error sending:", err);
+    showAlert("error", "เชื่อมต่อ n8n ไม่สำเร็จ");
+  });
+}
+</script>
+</body>
+</html>
