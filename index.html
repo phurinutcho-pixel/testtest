@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>📍 Employee Check-in</title>
   <style>
-    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: linear-gradient(135deg, #667eea, #764ba2); min-height: 100vh; display:flex; justify-content:center; align-items:center; }
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: linear-gradient(135deg,#667eea,#764ba2); min-height: 100vh; display:flex; justify-content:center; align-items:center; }
     .container { background:white; padding:2rem; border-radius:20px; box-shadow:0 20px 40px rgba(0,0,0,0.1); max-width:400px; width:90%; text-align:center; }
     h1 { color:#4f46e5; margin-bottom:1rem; }
     input { width:100%; padding:.75rem; margin:.5rem 0; border:2px solid #e5e7eb; border-radius:8px; }
@@ -20,7 +20,6 @@
 </head>
 <body>
 <div class="container">
-  <!-- Login -->
   <div id="loginPage">
     <h1>🔐 เข้าสู่ระบบ</h1>
     <form id="loginForm">
@@ -33,7 +32,6 @@
     </form>
   </div>
 
-  <!-- Main App -->
   <div id="mainApp" style="display:none;">
     <div class="alert alert-info" id="locationStatus">กำลังขอสิทธิ์เข้าถึงตำแหน่ง...</div>
     <div class="status-card">
@@ -116,7 +114,7 @@ function checkLocationPermission() {
     document.getElementById('checkinBtn').disabled = false;
     document.getElementById('checkoutBtn').disabled = false;
   }, err => {
-    showAlert('error','ไม่สามารถเข้าถึงตำแหน่งได้');
+    showAlert('error','ไม่สามารถเข้าถึงตำแหน่งได้: ' + err.message);
   });
 }
 
@@ -133,10 +131,11 @@ function checkIn() {
     timestamp: now.toISOString(),
     location: {
       latitude: currentPosition.coords.latitude,
-      longitude: currentPosition.coords.longitude
+      longitude: currentPosition.coords.longitude,
+      accuracy: currentPosition.coords.accuracy
     }
   };
-  sendToN8N(record);
+  sendToWebhook(record);
   isCheckedIn = true;
   localStorage.setItem('checkedIn','true');
   document.getElementById('currentStatus').innerHTML = `✅ เช็คอินแล้ว<br>${now.toLocaleString('th-TH')}`;
@@ -155,10 +154,11 @@ function checkOut() {
     timestamp: now.toISOString(),
     location: {
       latitude: currentPosition.coords.latitude,
-      longitude: currentPosition.coords.longitude
+      longitude: currentPosition.coords.longitude,
+      accuracy: currentPosition.coords.accuracy
     }
   };
-  sendToN8N(record);
+  sendToWebhook(record);
   isCheckedIn = false;
   localStorage.setItem('checkedIn','false');
   document.getElementById('currentStatus').innerHTML = `❌ เช็คเอาต์แล้ว<br>${now.toLocaleString('th-TH')}`;
@@ -170,38 +170,23 @@ function showAlert(type,msg) {
   div.textContent = msg;
 }
 
-function sendToN8N(record) {
-  // Reshape to workflow format
-  const payload = {
-    employeeId: record.employeeId,
-    passcode: record.passcode,
-    check_type: record.action,
-    location: {
-      latitude: record.location.latitude,
-      longitude: record.location.longitude
-    }
-  };
-
-  // ✅ Your webhook path
+function sendToWebhook(record) {
   const webhookUrl = "https://phurinutoe.app.n8n.cloud/webhook/955a2d77-64d6-4c9f-b652-2eef8007dc6f";
 
   fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(record),
   })
   .then(async res => {
-    try {
-      const data = await res.json();
-      console.log("Response from n8n:", data);
-      showAlert("success", data.message || "ส่งข้อมูลสำเร็จ");
-    } catch {
-      console.warn("Non-JSON response from n8n");
-    }
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const text = await res.text();
+    console.log("n8n response:", text);
+    showAlert("success", "ส่งข้อมูลถึง n8n แล้ว ✅");
   })
   .catch(err => {
     console.error("Error sending:", err);
-    showAlert("error", "เชื่อมต่อ n8n ไม่สำเร็จ");
+    showAlert("error", "เชื่อมต่อ n8n ไม่สำเร็จ ❌");
   });
 }
 </script>
